@@ -5,4 +5,3 @@ Please note this repository is under construction.
 
 The link to the article will be shared here when available. 
 
-fox_capture_success.csv indicates which trapping nights resulted in fox captures (0 = no capture, 1 = capture(s)).
