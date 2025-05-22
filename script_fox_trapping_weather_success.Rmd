@@ -1,0 +1,76 @@
+---
+title: "Fox capture success in relation to temperature and precipitation"
+author: "Holly M English"
+date: "2024-02-29"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+
+# Set up
+```{r}
+# load packages
+library(tidyverse)
+library(gridExtra)
+library(ggsignif) 
+library(coin)
+
+# load data
+df <- read.csv("trapping_nights_weather_success.csv", header = T, sep = ",")
+summary(df)
+df$capture.success <- as.factor(df$capture.success)
+str(df)
+
+```
+
+
+# Plotting
+```{r}
+# note: missing weather data from 19/02/2024 - weather station blip?
+df <- na.omit(df)
+
+# precipitation
+rain <- ggplot(df, aes(x = rain.mm, y = capture.success)) +
+  geom_boxplot() +
+  geom_signif(comparisons = list(c("0","1")), map_signif_level = T, tip_length = 0) +
+  labs(x = "Precipitation (mm)", y = "Capture Success") +
+  theme_classic()
+
+# min temp
+mintemp <- ggplot(df, aes(x = mintp, y = capture.success)) +
+  geom_boxplot() +
+  geom_signif(comparisons = list(c("0","1")), map_signif_level = T, tip_length = 0) +
+  labs(x = "Minimum Temperature (°C)", y = "Capture Success") +
+  xlim(-2, 16) +
+  theme_classic()
+
+# max temp
+maxtemp <- ggplot(df, aes(x = maxtp, y = capture.success)) +
+  geom_boxplot() +
+  geom_signif(comparisons = list(c("0","1")), map_signif_level = T, tip_length = 0) +
+  labs(x = "Maximum Temperature (°C)", y = "Capture Success") +
+  xlim(-2, 16) +
+  theme_classic()
+
+grid.arrange(rain, mintemp, maxtemp, ncol=1)
+```
+
+
+# Significance testing
+```{r}
+# check for normality
+qqnorm(df$rain.mm); qqline(df$rain.mm, lty=2)
+qqnorm(df$mintp); qqline(df$mintp, lty=2)
+qqnorm(df$maxtp); qqline(df$maxtp, lty=2)
+
+wilcox_test(df$rain.mm ~ df$capture.success)
+wilcox_test(df$mintp ~ df$capture.success)
+wilcox_test(df$maxtp ~ df$capture.success)
+
+# test chosen because: 
+# non-parametric (data not normal)
+```
+
