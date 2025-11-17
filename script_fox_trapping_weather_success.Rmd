@@ -1,7 +1,7 @@
 ---
 title: "Fox capture success in relation to temperature and precipitation"
 author: "Holly M English"
-date: "2024-02-29"
+date: "2025-11-13"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -17,45 +17,45 @@ library(tidyverse)
 library(gridExtra)
 library(ggsignif) 
 library(coin)
+library(climwin)
+
 
 # load data
-df <- read.csv("trapping_nights_weather_success.csv", header = T, sep = ",")
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+df <- read.csv("trapping_nights_effort_success_weather.csv", header = T, sep = ",")
 summary(df)
+df$date <- as.Date(df$date, format="%d/%m/%Y")
 df$capture.success <- as.factor(df$capture.success)
 str(df)
-
 ```
 
 
 # Plotting
 ```{r}
-# note: missing weather data from 19/02/2024 - weather station blip?
-df <- na.omit(df)
-
 # precipitation
-rain <- ggplot(df, aes(x = rain.mm, y = capture.success)) +
+rain <- ggplot(df, aes(x = capture.success, y = rain.mm)) +
   geom_boxplot() +
   geom_signif(comparisons = list(c("0","1")), map_signif_level = T, tip_length = 0) +
-  labs(x = "Precipitation (mm)", y = "Capture Success") +
+  labs(x = "Capture Success", y = "Precipitation (mm)") +
   theme_classic()
 
 # min temp
-mintemp <- ggplot(df, aes(x = mintp, y = capture.success)) +
+mintemp <- ggplot(df, aes(x = capture.success, y = mintp)) +
   geom_boxplot() +
   geom_signif(comparisons = list(c("0","1")), map_signif_level = T, tip_length = 0) +
-  labs(x = "Minimum Temperature (°C)", y = "Capture Success") +
-  xlim(-2, 16) +
+  labs(x = "Capture Success", y = "Minimum Temperature (°C)") +
+  ylim(-2, 16) +
   theme_classic()
 
 # max temp
-maxtemp <- ggplot(df, aes(x = maxtp, y = capture.success)) +
+maxtemp <- ggplot(df, aes(x = capture.success, y = maxtp)) +
   geom_boxplot() +
   geom_signif(comparisons = list(c("0","1")), map_signif_level = T, tip_length = 0) +
-  labs(x = "Maximum Temperature (°C)", y = "Capture Success") +
-  xlim(-2, 16) +
+  labs(x = "Capture Success", y = "Maximum Temperature (°C)") +
+  ylim(-2, 16) +
   theme_classic()
 
-grid.arrange(rain, mintemp, maxtemp, ncol=1)
+grid.arrange(rain, mintemp, maxtemp, ncol=3)
 ```
 
 
@@ -66,11 +66,137 @@ qqnorm(df$rain.mm); qqline(df$rain.mm, lty=2)
 qqnorm(df$mintp); qqline(df$mintp, lty=2)
 qqnorm(df$maxtp); qqline(df$maxtp, lty=2)
 
+# check if weather conditions were different between capture success vs failure
+# syntax for this test from coin package - continuous/numeric ~ group/factor 
 wilcox_test(df$rain.mm ~ df$capture.success)
 wilcox_test(df$mintp ~ df$capture.success)
 wilcox_test(df$maxtp ~ df$capture.success)
 
 # test chosen because: 
 # non-parametric (data not normal)
+```
+
+
+
+
+###############################################################################################################################
+ 
+ ## Climwin analysis ##
+
+The climwin package requires separate biological and climate datasets. Climate dataset should not have any date gaps.
+
+```{r}
+# rename df for clarity
+capdf <- df
+rm(df)
+
+# three rows missing values for number of traps set
+# remove these to work out capture rate
+capdf <- subset(capdf, !is.na(num.traps))
+
+# capture rate per trapping night
+capdf$capture.rate <- capdf$num.captures / capdf$num.traps
+
+
+# load climate data
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+weathdf <- read.csv("dublin_weather_data_2023_2024.csv", header = T, sep = ",")     # weather data
+
+
+# make sure columns are in the right format
+# date must be in DD/MM/YYYY format for climwin
+str(capdf)
+capdf$date   <- as.Date(capdf$date, format = "%d/%m/%Y")
+capdf$capture.success <- as.factor(capdf$capture.success)
+
+str(weathdf)
+weathdf$date <- as.Date(weathdf$date, format = "%d/%m/%Y")
+```
+
+
+# Weather over sliding time window with climwin
+```{r}
+# specify date columns
+# set the baseline model which determines the structure of the null model
+# more info here: https://cran.r-project.org/web/packages/climwin/vignettes/climwin.html
+
+# rain sliding window
+rainwin <- slidingwin(baseline = lm(capture.rate ~ 1, data = capdf), # baseline model without weather variables
+                      xvar = list(rain = weathdf$rain),
+                      type = "relative",   # relative date which varies between individuals, not absolute calendar date
+                      range = c(7,0),      # test up to 5 days before capture
+                      stat = c("mean", "sum", "max", "min"),
+                      func = c("lin"),     # linear response function
+                      cinterval = "day",
+                      cdate = weathdf$date,  # climate data date  
+                      bdate = capdf$date)    # biological data date
+
+
+# summary for each stat with AICc and best time windows
+rainwin$combos
+
+# view models sorted by AICc (i.e., top model is best fit)
+head(rainwin[[1]]$Dataset, n=10)
+
+# summary of best model
+summary(rainwin[[1]]$BestModel)
+# rain shows negative, non-significant relationship with capture rate 
+```
+
+
+# Minimum temp
+```{r}
+# lowest daily temperature sliding window
+mintpwin <- slidingwin(baseline = lm(capture.rate ~ 1, data = capdf), # baseline model without weather variables
+                      xvar = list(mintp = weathdf$mintp),
+                      type = "relative",   # relative date which varies between individuals, not absolute calendar date
+                      range = c(7,0),      # test up to 5 days before capture
+                      stat = c("mean", "sum", "min"),
+                      func = c("lin"),     # linear response function
+                      cinterval = "day",
+                      cdate = weathdf$date,  # climate data date  
+                      bdate = capdf$date)    # biological data date
+
+
+
+# summary for each stat with AICc and best time windows
+mintpwin$combos
+
+# summary of best model
+summary(mintpwin[[1]]$BestModel)
+
+
+# view models sorted by AICc (i.e., top model is best fit)
+head(mintpwin[[1]]$Dataset)
+
+# summary of best model
+summary(mintpwin[[1]]$BestModel)
+# non-significant relationship with capture rate 
+```
+
+
+# Maximum temp
+Maybe the stat here should be "maximum"
+```{r}
+# highest daily temperature sliding window
+maxtpwin <- slidingwin(baseline = lm(capture.rate ~ 1, data = capdf), # baseline model without weather variables
+                      xvar = list(maxtp = weathdf$maxtp),
+                      type = "relative",   # relative date which varies between individuals, not absolute calendar date
+                      range = c(7,0),      # test up to 5 days before capture
+                      stat = c("mean", "sum", "max"),
+                      func = c("lin"),     # linear response function
+                      cinterval = "day",
+                      cdate = weathdf$date,  # climate data date  
+                      bdate = capdf$date)    # biological data date
+
+# summary for each stat with AICc and best time windows
+maxtpwin$combos
+
+# view models sorted by AICc (i.e., top model is best fit)
+head(maxtpwin[[1]]$Dataset)
+
+# summary of best model
+summary(maxtpwin[[1]]$BestModel)
+# non-significant relationship with capture rate 
 ```
 
